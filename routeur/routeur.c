@@ -51,7 +51,7 @@
 {																						\
 	OSMutexPend(&mutPrint, 0, OS_OPT_PEND_BLOCKING, &ts, &perr);						\
 	xil_printf(fmt, ##__VA_ARGS__);														\
-	OSMutexPost(&mutPrint, OS_OPT_POST_NONE, &perr);
+	OSMutexPost(&mutPrint, OS_OPT_POST_NONE, &perr);									\
 }
 #else
 #define safeprintf(fmt, ...)															\
@@ -174,13 +174,13 @@ void TaskGenerate(void *data) {
 
 			// Code à compléter pour la manipulation 1 i.e. le calcul du CRC avec injection de fautes
 			// TODO 1
-			uint16_t crcValue = _computeCRC((uint16_t*) (packet), sizeof(*packet));
-
+			packet->crc = 0;
+			unsigned int crcValue = _computeCRC((uint16_t*) (packet), sizeof(*packet));
 			if(rand() % 10 == 0) {
-			    crcValue++;
+				 crcValue++;
 			}
-
 			packet->crc = crcValue;
+
 
 #if FULL_TRACE == 1
 			OSMutexPend(&mutPrint, 0, OS_OPT_PEND_BLOCKING, &ts, &perr);
@@ -272,25 +272,20 @@ void TaskStop(void* data){
  *********************************************************************************************************
  */
 
-
 unsigned int computeCRC(uint16_t* w,int nleft){
 	uint16_t answer = 0;
 	OS_ERR err;
-	OS_TICK Nb_of_ticks_in_CRC_init;
 
 	// Code à compléter pour le calcul du nombre de ticks dans la manipulation 1
 	// TODO 1
-	Nb_of_ticks_in_CRC_init = OSTimeGet(&err);
-
+	OS_TICK Nb_of_ticks_in_CRC_init = OSTimeGet(&err);
 	for (int i = 0; i < NB_CRC_TO_MATCH; i++)
 	{
 		answer = _computeCRC(w, nleft);
 	}
-	OS_TICK Nb_of_ticks_in_CRC_end = OSTimeGet(&err);
-	nbPacketSourceRejeteTotal += Nb_of_ticks_in_CRC_end - Nb_of_ticks_in_CRC_init;
-
+	OS_TICK current_ticks = OSTimeGet(&err);
+	nb_CPU_tick_CRC_total += current_ticks - Nb_of_ticks_in_CRC_init;
 	nb_calls_crc++;
-
 	return answer;
 	// Code à compléter pour le calcul du nombre de ticks dans la manipulation 1
 	// TODO 1
@@ -335,8 +330,7 @@ void TaskComputing(void *pdata) {
 	CPU_TS ts;
 	OS_MSG_SIZE msg_size;
 	Packet *packet = NULL;
-	OS_TICK actualticks = 0;
-
+		while(true){
 		OSFlagPend(&RouterStatus, TASK_COMPUTING_RDY, 0, OS_OPT_PEND_FLAG_SET_ALL + OS_OPT_PEND_BLOCKING, &ts, &err);
 
 		packet = OSTaskQPend(0, OS_OPT_PEND_BLOCKING, &msg_size, &ts, &err);
@@ -349,9 +343,6 @@ void TaskComputing(void *pdata) {
 		/* N.B. On ne rejette aucun paquet pour le moment donc nbPacketCRCRejete et nbPacketCRCRejeteTotal reste a 0 */
 		// TODO 1
 
-		actualticks = OSTimeGet(&err);
-		while (WAITFORComputing + actualticks > OSTimeGet(&err));
-
 		//Verification de l'espace d'addressage
 		if ((packet->src > REJECT_LOW1 && packet->src < REJECT_HIGH1) ||
 			(packet->src > REJECT_LOW2 && packet->src < REJECT_HIGH2) ||
@@ -362,18 +353,18 @@ void TaskComputing(void *pdata) {
 				// On pourra énumerer les paquets rejetés au moment de l'affichage des statistiques si print_paquets_rejetes = 1
 				// Aussi ce code sera à modifier dans la manipulation 2 pour un fifo externe
 				// TODO 2
-				OSTaskQPost(&TaskStatsTCB, packet, sizeof(packet), OS_OPT_POST_FIFO + OS_OPT_POST_NO_SCHED, &err);
+				OSTaskQPost(&source_errQ, packet, sizeof(packet), OS_OPT_POST_FIFO, &err);
+
+
 		}
 		/* TODO 1 TODO 2
 		 Code à completer pour le test du CRC de la manipulation no 1, ce qui permettra de retirer les ligne de l'attente active plus haut
 		 Notez aussi que dans la manipulation 1 vous devez mettre le paquet dans &TaskStatsTCB alors que dans la manipulation 2 le paqet sera mis dans un fifo externe */
+		else if (computeCRC((uint16_t*)packet, sizeof(*packet)) != 0) {
+			++nbPacketCRCRejete;
+			OSTaskQPost(&crc_errQ, packet, sizeof(packet), OS_OPT_POST_FIFO, &err);
+		}
 		else {
-			if(computeCRC((uint16_t*)packet, sizeof(*packet)) != 0) {
-			        ++nbPacketCRCRejete;
-			        OSTaskQPost(&TaskStatsTCB, packet, sizeof(packet), OS_OPT_POST_FIFO + OS_OPT_POST_NO_SCHED, &err);
-			    }
-
-			else {
 
 			//Dispatche les paquets selon leur type
 			switch (packet->type) {
@@ -403,7 +394,7 @@ void TaskComputing(void *pdata) {
 					packet_rejete_fifo_pleine_Q++;
 				}
 		}
-	}
+		}
 }
 
 
@@ -435,7 +426,7 @@ void TaskFIFOForwarding(void *data) {
 			safeprintf("\nNb de paquets dans MediumQ - apres consommation de TaskFowarding: %d \n", TaskFIFOForwardingTCB[PACKET_AUDIO].MsgQ.NbrEntries);
 		break;
 		case PACKET_AUTRE:
-			safeprintf("\nNb de paquets daputInFifoTaskStatsTCB(packet);ns LowQ - apres consommation de TaskFowarding: %d \n", TaskFIFOForwardingTCB[PACKET_AUTRE].MsgQ.NbrEntries);
+			safeprintf("\nNb de paquets dans LowQ - apres consommation de TaskFowarding: %d \n", TaskFIFOForwardingTCB[PACKET_AUTRE].MsgQ.NbrEntries);
 		break;
 		}
 
@@ -555,7 +546,6 @@ void TaskOutputPort(void *data) {
  void TaskStats(void* pdata) {
 	OS_ERR err, perr;
 	CPU_TS ts;
-	OS_TICK actualticks;
 	Packet* packet = NULL;
 	OS_MSG_SIZE msg_size;
 
@@ -588,14 +578,57 @@ void TaskOutputPort(void *data) {
 		xil_printf("17- Nombre de ticks depuis le début de l'execution %d \n", OSTimeGet(&err));	
 		// TODO 1
 		// Ligne suivante à completer pour la manipulation 1
-		xil_printf("18- Nombre de call et nombre de ticks CPU moyens dans CRC %d %d\n", nb_calls_crc ,nbPacketCrees / nbPacketCRCRejeteTotal);
+		xil_printf("18- Nombre de call et nombre de ticks CPU moyens dans CRC %d %d \n", nb_calls_crc ,nb_CPU_tick_CRC_total / nb_calls_crc);
 
 		OSMutexPost(&mutPrint, OS_OPT_POST_NONE, &err);
 
 		// On vide la fifo des paquets rejetés et on imprime si l option est demandee
 		// Aussi le code suivant sera à modifier dans la manipulation 2
 
+
 		while(1) {
+
+			if (print_paquets_rejetes_source) {
+				packet = OSQPend(&source_errQ, 0, OS_OPT_PEND_FLAG_SET_ALL + OS_OPT_PEND_BLOCKING, &msg_size, &ts, &err);
+					if (err != OS_ERR_PEND_WOULD_BLOCK){
+						OSMutexPend(&mutPrint, 0, OS_OPT_PEND_BLOCKING, &ts, &err);
+					    xil_printf("    >> paquet rejete source # : %d \n", packet->data[0]);
+					    xil_printf("    >> src : %x \n", packet->src);
+					    xil_printf("    >> dst : %x \n", packet->dst);
+						xil_printf("    >> type : %d \n", packet->type);
+						OSMutexPost(&mutPrint, OS_OPT_POST_NONE, &err);
+					}
+					else {
+						break;
+					}
+			}
+
+			OSMutexPend(&mutAlloc, 0, OS_OPT_PEND_BLOCKING, &ts, &err);
+			free(packet);
+			OSMutexPost(&mutAlloc, OS_OPT_POST_NONE, &err);
+
+			packet = NULL;
+
+			if (print_paquets_rejetes_crc) {
+					packet = OSQPend(&crc_errQ, 0, OS_OPT_PEND_FLAG_SET_ALL + OS_OPT_PEND_BLOCKING, &msg_size, &ts, &err);
+					if (err != OS_ERR_PEND_WOULD_BLOCK) {
+						OSMutexPend(&mutPrint, 0, OS_OPT_PEND_BLOCKING, &ts, &err);
+						xil_printf("    >> paquet rejete CRC # : %d \n", packet->data[0]);
+						xil_printf("    >> src : %x \n", packet->src);
+						xil_printf("    >> dst : %x \n", packet->dst);
+						xil_printf("    >> type : %d \n", packet->type);
+						OSMutexPost(&mutPrint, OS_OPT_POST_NONE, &err);
+					}
+					else {
+						break;
+					}
+			}
+
+			OSMutexPend(&mutAlloc, 0, OS_OPT_PEND_BLOCKING, &ts, &err);
+			free(packet);
+			OSMutexPost(&mutAlloc, OS_OPT_POST_NONE, &err);
+
+			packet = NULL;
 
 			packet = OSTaskQPend(0, OS_OPT_PEND_NON_BLOCKING, &msg_size, &ts, &err);  // On prend soin de ne pas rester bloqué
             if (err == OS_ERR_PEND_WOULD_BLOCK) {
@@ -705,11 +738,11 @@ void StartupTask (void *p_arg)
 
 #if ((APP_USBD_ENABLED == DEF_ENABLED) && (UCOS_CFG_INIT_USBD == DEF_ENABLED) && (UCOS_USB_TYPE == UCOS_USB_TYPE_DEVICE))
     UCOS_USBD_Init();
-#endif  #if (APP_USBD_ENABLED == DEF_ENABLED)
+#endif  #if /*(APP_USBD_ENABLED == DEF_ENABLED)*/
 
 #if ((APP_USBH_ENABLED == DEF_ENABLED) && (UCOS_CFG_INIT_USBH == DEF_ENABLED) && (UCOS_USB_TYPE == UCOS_USB_TYPE_HOST))
     UCOS_USBH_Init();
-#endif  #if (APP_USBH_ENABLED == DEF_ENABLED)
+#endif  #if /*(APP_USBH_ENABLED == DEF_ENABLED)*/
 
 #if (UCOS_START_DEBUG_TRACE == DEF_ENABLED)
     Mem_SegRemSizeGet(DEF_NULL, 4, &seg_info, &lib_err);
@@ -785,4 +818,5 @@ void StartupTask (void *p_arg)
 	OSTaskSuspend((OS_TCB *)0,&err);
 
 }
+
 

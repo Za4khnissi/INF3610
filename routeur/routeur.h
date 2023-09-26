@@ -35,7 +35,7 @@
 #define			NB_CRC_TO_MATCH					8500
 
 
-#define 		 FULL_TRACE 					1
+#define 		 FULL_TRACE 					0
 
 
 // Routing info.
@@ -159,9 +159,11 @@ int nb_calls_crc = 0;								// Nb d'appels à computeCRC
 int packet_rejete_fifo_pleine_inputQ = 0;			// Utilisation de la fifo d'entrée
 int packet_rejete_output_port_plein = 0;			// Utilisation des MB
 int packet_rejete_fifo_pleine_Q = 0;
-int delai_pour_vider_les_fifos_sec = 2;
-int delai_pour_vider_les_fifos_msec = 0;
+int delai_pour_vider_les_fifos_sec = 0;
+int delai_pour_vider_les_fifos_msec = 375;
 int print_paquets_rejetes = 0;
+int print_paquets_rejetes_source = 0;
+int print_paquets_rejetes_crc = 0;
 int limite_de_paquets= 20000;
 
 /* ************************************************
@@ -185,3 +187,4 @@ unsigned int computeCRC(uint16_t* w, int nleft);
 unsigned int _computeCRC(uint16_t* w, int nleft);
 
 #endif /* SRC_ROUTEUR_H_EXT_ */
+
