@@ -35,7 +35,7 @@
 #define			NB_CRC_TO_MATCH					8500
 
 
-#define 		 FULL_TRACE 					0
+#define 		 FULL_TRACE 					1
 
 
 // Routing info.
