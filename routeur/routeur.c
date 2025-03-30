@@ -640,3 +640,4 @@ GitHub repository created: https://githubext.cae.com/Sandbox/azurepipelineautoma
 
 
 
+ms.vss-web.platform-content.es6.tcm9Ik.min.js:1  ContributionData unavailable for 'ms.vss-build-web.check-for-hosted-mac-data-provider', ExceptionType: 'YamlFileNotFoundException', Reason: Could not find /azure-pipelines.yml in repository self hosted on https://githubext.cae.com/ using commit . GitHub reported the error, "Not Found", StackTrace: null
